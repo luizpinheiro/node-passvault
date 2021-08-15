@@ -87,6 +87,10 @@ const main = async (): Promise<void> => {
         },
         new inquirer.Separator(),
         {
+          name: 'Backup your vault file',
+          value: MainMenuOptions.BACKUP_VAULT,
+        },
+        {
           name: 'Change vault master password',
           value: MainMenuOptions.UPDATE_VAULT_PASSWORD,
         },
@@ -428,6 +432,12 @@ const menuHandler: MenuOptionsHandler = {
 
     await showBackToMainMenuOption()
     console.clear()
+  },
+  [MainMenuOptions.BACKUP_VAULT]: async (): Promise<void> => {
+    console.log('Backing up your vault...')
+    vault.backupVault()
+    console.log('Done!')
+    await showBackToMainMenuOption()
   },
 }
 

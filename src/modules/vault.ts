@@ -1,6 +1,7 @@
 import fs from 'fs'
 import crypto from 'crypto'
 import passwordGenerator from 'generate-password'
+import path from 'path'
 
 import { Credential, GeneratePasswordOptions, Vault, VaultPassword, VaultWrapper } from '../types'
 import { VAULT_FILE_PATH, VAULT_FOLDER_PATH } from '../config/paths'
@@ -220,3 +221,13 @@ export const changePassword = (plainPassword: string): void => {
  * Checks if the vault is currently in a lock state
  */
 export const locked = (): boolean => vaultState === VaultState.LOCKED
+
+/**
+ * Creates a copy of the encrypted vault file
+ */
+export const backupVault = (): void => {
+  const backupFileName = `vault-backup-${Date.now()}.json`
+  const backupFilePath = path.resolve(VAULT_FOLDER_PATH, backupFileName)
+  fs.copyFileSync(VAULT_FILE_PATH, backupFilePath)
+  console.log(`Backup file written to ${backupFilePath}`)
+}
