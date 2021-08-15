@@ -14,7 +14,7 @@ import {
   vaultExists,
 } from './modules/vault'
 
-const IDLE_SECONDS = 30
+const IDLE_SECONDS = 60
 let vaultState = VaultState.LOCKED
 let vault: Vault | null = null
 let vaultPasswordHash: Buffer
