@@ -446,7 +446,7 @@ const menuHandler: MenuOptionsHandler = {
 
 const logNoCredentialsMessage = (): void => {
   console.log('-------------------------------------')
-  console.log("You don't have any store credentials!")
+  console.log("You don't have any stored credentials!")
   console.log('-------------------------------------')
 }
 
