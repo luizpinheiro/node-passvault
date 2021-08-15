@@ -48,7 +48,6 @@ export const unlockVault = (vaultPasswordHash: Buffer): Vault | null => {
     vaultDecryptedData.push(decipher.final('utf-8'))
     return JSON.parse(vaultDecryptedData.join('')) as Vault
   } catch (e) {
-    console.log(e)
     return null
   }
 }
@@ -57,7 +56,7 @@ export const updateVault = (vault: Vault, vaultPasswordHash: Buffer): void => {
   const vaultWrapper: VaultWrapper = JSON.parse(
     fs.readFileSync(VAULT_FILE_PATH, { encoding: 'utf-8' }),
   )
-  const iv = Buffer.from(vaultWrapper.iv, 'base64')
+  const iv = crypto.createHash('sha256').update(crypto.randomBytes(16)).digest()
   const cipher = crypto.createCipheriv('aes-256-gcm', vaultPasswordHash, iv)
   let encryptedData: string[] | string = []
   const encodedData = JSON.stringify(vault)
@@ -66,6 +65,7 @@ export const updateVault = (vault: Vault, vaultPasswordHash: Buffer): void => {
   encryptedData = encryptedData.join('')
   vaultWrapper.encryptedData = encryptedData
   vaultWrapper.authTag = cipher.getAuthTag().toString('base64')
+  vaultWrapper.iv = iv.toString('base64')
   fs.writeFileSync(VAULT_FILE_PATH, JSON.stringify(vaultWrapper), { encoding: 'utf-8' })
 }
 
