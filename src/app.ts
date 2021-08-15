@@ -108,7 +108,7 @@ const main = async (): Promise<void> => {
           value: 'showLastGeneratedPassword',
         },
         {
-          name: 'Exit...',
+          name: 'Exit',
           value: 'exit',
         },
       ],
