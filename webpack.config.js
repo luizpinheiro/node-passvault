@@ -6,7 +6,7 @@ module.exports = {
   mode: 'production',
   target: 'node',
   output: {
-    path: path.resolve(__dirname, "./build"),
+    path: path.resolve(__dirname, './build'),
     filename: 'node-passvault',
     clean: true,
   },
