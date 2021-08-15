@@ -5,9 +5,12 @@ module.exports = {
   entry: path.resolve(__dirname, './src/app.ts'),
   mode: 'production',
   target: 'node',
+  optimization: {
+    minimize: true,
+  },
   output: {
     path: path.resolve(__dirname, './build'),
-    filename: 'node-passvault',
+    filename: 'node-passvault.js', // must bring the extension or minification won't work
     clean: true,
   },
   module: {

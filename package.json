@@ -10,8 +10,8 @@
   "scripts": {
     "start": "ts-node --transpile-only src/app.ts",
     "dev": "ts-node-dev src/app.ts",
-    "build": "webpack-cli -c webpack.config.js",
-    "postbuild": "chmod +x build/node-passvault"
+    "build": "webpack -c webpack.config.js",
+    "postbuild": "mv build/node-passvault.js build/node-passvault && chmod +x build/node-passvault"
   },
   "devDependencies": {
     "@types/clipboardy": "^2.0.1",
