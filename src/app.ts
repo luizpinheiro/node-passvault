@@ -3,52 +3,42 @@ import { clearTimeout } from 'timers'
 import clipboardy from 'clipboardy'
 
 import { VaultState } from './enums'
-import { Vault } from './types'
-import {
-  createVault,
-  generateStrongPassword,
-  passwordHash,
-  unlockVault,
-  updateVault,
-  validateStrongPassword,
-  vaultExists,
-} from './modules/vault'
+import * as vault from './modules/vault'
 
 const IDLE_SECONDS = 60
 let vaultState = VaultState.LOCKED
-let vault: Vault | null = null
-let vaultPasswordHash: Buffer
 let idleTimeoutId: NodeJS.Timeout | null = null
 let lastGeneratedPassword: string | null = null
 
 const main = async (): Promise<void> => {
-  if (!vaultExists()) {
+  if (!vault.vaultExists()) {
     console.log('---- NO VAULT FOUND, CREATING... ---')
-    let prePassword
-    let checkPassword
+    let passwordData
     let weakPass
     do {
-      prePassword = await inquirer.prompt({
-        type: 'password',
-        name: 'password',
-        message: 'Provide a master password for your NEW vault:',
-      })
-      checkPassword = await inquirer.prompt({
-        type: 'password',
-        name: 'password',
-        message: 'Type it again so we can be sure you made no mistakes:',
-      })
-      weakPass = !validateStrongPassword(prePassword.password)
-      if (weakPass)
-        console.log(
-          'Your password is too weak!\nIt MUST be at least 12 chars long and have upper and lower case letters, numbers and special chars. You also SHOULD NOT use the password you choose anywhere else!',
-        )
-      else if (prePassword.password !== checkPassword.password)
-        console.log('Provided passwords does not match!')
-    } while (weakPass || prePassword.password !== checkPassword.password)
+      passwordData = await inquirer.prompt([
+        {
+          type: 'password',
+          name: 'plain',
+          message: 'Provide a master password for your NEW vault:',
+          validate(plainPassword: string): boolean | string {
+            if (!vault.validateStrongPassword(plainPassword))
+              return 'Your password is too weak!\nIt MUST be at least 12 chars long and have upper and lower case letters, numbers and special chars. You also SHOULD NOT use the password you choose anywhere else!'
+            return true
+          },
+        },
+        {
+          type: 'password',
+          name: 'confirmation',
+          message: 'Type it again so we can be sure you made no mistakes:',
+        },
+      ])
 
-    vaultPasswordHash = passwordHash(prePassword.password)
-    createVault(vaultPasswordHash)
+      if (passwordData.plain !== passwordData.confirmation)
+        console.log('Provided passwords does not match!')
+    } while (weakPass || passwordData.plain !== passwordData.confirmation)
+
+    vault.createVault(passwordData.plain)
     console.log('Great! We have created your vault!!!')
     return main()
   }
@@ -59,10 +49,8 @@ const main = async (): Promise<void> => {
       name: 'password',
       message: 'Provide the master password of your vault:',
     })
-    vaultPasswordHash = passwordHash(inputPassword.password)
-    vault = unlockVault(vaultPasswordHash)
-    if (!vault) console.log('Wrong password! Try again...')
-  } while (vault === null)
+    if (!vault.unlockVault(inputPassword.password)) console.log('Wrong password! Try again...')
+  } while (vault.locked())
 
   console.clear()
   vaultState = VaultState.UNLOCKED
@@ -71,8 +59,7 @@ const main = async (): Promise<void> => {
     if (idleTimeoutId) clearTimeout(idleTimeoutId)
 
     idleTimeoutId = setTimeout(() => {
-      vault = null
-      vaultState = VaultState.LOCKED
+      vault.lockVault()
       console.log(`\nIdle for ${IDLE_SECONDS} seconds... closing vault.\n`)
       console.log(`Bye!!!`)
       process.exit(0)
@@ -124,16 +111,17 @@ const main = async (): Promise<void> => {
 
     if (mainMenu.option === 'listCredentials' && vault) {
       console.clear()
-      if (!vault?.credentials.length) {
+      const credentials = vault.getCredentials()
+      if (!credentials.length) {
         console.log('-------------------------------------')
         console.log("You don't have any store credentials!")
         console.log('-------------------------------------')
-      } else
-        console.table(vault?.credentials.map((credential) => ({ ...credential, secret: '******' })))
+      } else console.table(credentials.map((credential) => ({ ...credential, secret: '******' })))
     }
 
     if (mainMenu.option === 'storeCredential' && vault) {
       console.clear()
+      const credentials = vault.getCredentials()
       const credentialData = await inquirer.prompt([
         {
           type: 'input',
@@ -141,7 +129,7 @@ const main = async (): Promise<void> => {
           message: 'Provide an identifier for this credential (eg: amazon):',
           validate(input: string): boolean | string {
             if (input.length < 2) return 'You must provide an identifier for this credential'
-            if (vault?.credentials.some((credential) => credential.key === input))
+            if (credentials.some((credential) => credential.key === input))
               return 'A credential with this same identifier already exists! Choose other...'
             return true
           },
@@ -178,30 +166,30 @@ const main = async (): Promise<void> => {
           message: 'Provide a website for this credential (optional):',
         },
       ])
-      vault.credentials.push({
+      vault.addCredential({
         identifier: credentialData.identifier,
         key: credentialData.key,
         secret: credentialData.secret,
         website: credentialData.website,
       })
-      updateVault(vault, vaultPasswordHash)
       console.clear()
       console.log('Your credential was stored successfully!')
     }
 
     if (mainMenu.option === 'copySecretClipboard' && vault) {
       console.clear()
-      if (vault.credentials.length === 0) {
+      const credentials = vault.getCredentials()
+      if (credentials.length === 0) {
         console.log('-------------------------------------')
         console.log("You don't have any store credentials!")
         console.log('-------------------------------------')
       } else {
         const credentialData = await inquirer.prompt({
-          type: vault.credentials.length > 5 ? 'rawlist' : 'list',
+          type: credentials.length > 5 ? 'rawlist' : 'list',
           name: 'index',
           message: 'Select a credential to copy the secret to the clipboard:',
           choices: [
-            ...vault.credentials.map((credential, index) => ({
+            ...credentials.map((credential, index) => ({
               name: `Identifier: ${credential.identifier} | Key: ${credential.key} | Website: ${credential.website}`,
               value: index,
             })),
@@ -213,9 +201,8 @@ const main = async (): Promise<void> => {
         })
         const index = parseInt(credentialData.index, 10)
         if (index >= 0) {
-          const credential = vault.credentials[index]
+          const credential = credentials[index]
           clipboardy.writeSync(credential.secret)
-
           await inquirer.prompt({
             type: 'input',
             name: 'confirmation',
@@ -228,17 +215,18 @@ const main = async (): Promise<void> => {
 
     if (mainMenu.option === 'showCredential' && vault) {
       console.clear()
-      if (vault.credentials.length === 0) {
+      const credentials = vault.getCredentials()
+      if (credentials.length === 0) {
         console.log('-------------------------------------')
         console.log("You don't have any store credentials!")
         console.log('-------------------------------------')
       } else {
         const credentialData = await inquirer.prompt({
-          type: vault.credentials.length > 5 ? 'rawlist' : 'list',
+          type: credentials.length > 5 ? 'rawlist' : 'list',
           name: 'index',
           message: 'Select a credential to show the secret:',
           choices: [
-            ...vault.credentials.map((credential, index) => ({
+            ...credentials.map((credential, index) => ({
               name: `Identifier: ${credential.identifier} - Key: ${credential.key} - Website: ${credential.website}`,
               value: index,
             })),
@@ -250,7 +238,7 @@ const main = async (): Promise<void> => {
         })
         const index = parseInt(credentialData.index, 10)
         if (index >= 0) {
-          const credential = vault.credentials[index]
+          const credential = credentials[index]
           console.table(credential)
 
           await inquirer.prompt({
@@ -265,17 +253,18 @@ const main = async (): Promise<void> => {
 
     if (mainMenu.option === 'removeCredential' && vault) {
       console.clear()
-      if (vault.credentials.length === 0) {
+      const credentials = vault.getCredentials()
+      if (credentials.length === 0) {
         console.log('-------------------------------------')
         console.log("You don't have any store credentials!")
         console.log('-------------------------------------')
       } else {
         const credentialData = await inquirer.prompt({
-          type: vault.credentials.length > 5 ? 'rawlist' : 'list',
+          type: credentials.length > 5 ? 'rawlist' : 'list',
           name: 'index',
           message: 'Select the credential you want to remove:',
           choices: [
-            ...vault.credentials.map((credential, index) => ({
+            ...credentials.map((credential, index) => ({
               name: `Identifier: ${credential.identifier} | Key: ${credential.key} | Website: ${credential.website}`,
               value: index,
             })),
@@ -288,7 +277,7 @@ const main = async (): Promise<void> => {
 
         const index = parseInt(credentialData.index, 10)
         if (index >= 0) {
-          const credential = vault.credentials[index]
+          const credential = credentials[index]
           const confirmation = await inquirer.prompt({
             type: 'confirm',
             name: 'confirm',
@@ -296,8 +285,7 @@ const main = async (): Promise<void> => {
             message: `Are you sure you want to remove the credential "${credential.identifier}"? This cannot be undone!`,
           })
           if (confirmation.confirm) {
-            vault.credentials = vault.credentials.filter((c) => c !== credential)
-            updateVault(vault, vaultPasswordHash)
+            vault.removeCredential(credential)
             console.log('Credential removed successfully!')
             await inquirer.prompt({
               type: 'input',
@@ -332,7 +320,7 @@ const main = async (): Promise<void> => {
         },
       ])
 
-      lastGeneratedPassword = generateStrongPassword({
+      lastGeneratedPassword = vault.generateStrongPassword({
         size: credentialData.size,
         specialChars: credentialData.specialChars,
         exclude: credentialData.exclude,
@@ -381,8 +369,7 @@ const main = async (): Promise<void> => {
           name: 'currentPassword',
           message: 'Provide your CURRENT vault password:',
           validate(input: string): string | boolean {
-            const currentPasswordHash = passwordHash(input)
-            if (!currentPasswordHash.equals(vaultPasswordHash)) {
+            if (!vault.checkCurrentPassword(input)) {
               return 'Invalid current password'
             }
             return true
@@ -393,11 +380,10 @@ const main = async (): Promise<void> => {
           name: 'newPassword',
           message: 'Provide a NEW vault password:',
           validate(input: string): boolean | string {
-            if (!validateStrongPassword(input)) {
+            if (!vault.validateStrongPassword(input)) {
               return 'The new password is not valid. It must have at least 12 characters and contain upper and lower case letters, numbers and special chars.'
             }
-            const newPasswordHash = passwordHash(input)
-            if (newPasswordHash.equals(vaultPasswordHash)) {
+            if (vault.checkCurrentPassword(input)) {
               return 'The new password cannot be the same as the current password.'
             }
             return true
@@ -416,9 +402,8 @@ const main = async (): Promise<void> => {
         },
       ])
       console.log('Updating vault password...')
-      vaultPasswordHash = passwordHash(data.newPassword)
-      updateVault(vault, vaultPasswordHash)
       console.log('Vault password successfully updated!')
+      vault.changePassword(data.newPassword)
       await inquirer.prompt({
         type: 'input',
         name: 'continue',

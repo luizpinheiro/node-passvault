@@ -12,6 +12,7 @@ export type Credential = {
 
 export type VaultWrapper = {
   encryptedData: string
+  salt: string
   iv: string
   authTag: string
 }
@@ -20,4 +21,9 @@ export type GeneratePasswordOptions = {
   size: number
   specialChars: boolean
   exclude: string
+}
+
+export type VaultPassword = {
+  hash: Buffer
+  salt: Buffer
 }
