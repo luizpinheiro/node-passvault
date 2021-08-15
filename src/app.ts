@@ -170,6 +170,8 @@ const menuHandler: MenuOptionsHandler = {
       return
     }
     console.table(credentials.map((credential) => ({ ...credential, secret: '******' })))
+    await showBackToMainMenuOption()
+    console.clear()
   },
   [MainMenuOptions.STORE_CREDENTIAL]: async (): Promise<void> => {
     console.clear()
@@ -438,6 +440,7 @@ const menuHandler: MenuOptionsHandler = {
     vault.backupVault()
     console.log('Done!')
     await showBackToMainMenuOption()
+    console.clear()
   },
 }
 
