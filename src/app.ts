@@ -4,6 +4,7 @@ import clipboardy from 'clipboardy'
 
 import { MainMenuOptions, VaultState } from './enums'
 import * as vault from './modules/vault'
+import { MenuOptionsHandler } from './types'
 
 const IDLE_SECONDS = 60
 let vaultState = VaultState.LOCKED
@@ -48,10 +49,12 @@ const main = async (): Promise<void> => {
       process.exit(0)
     }, IDLE_SECONDS * 1000)
 
-    const mainMenu = await inquirer.prompt({
+    const menuSelection = await inquirer.prompt({
       type: 'list',
       name: 'option',
       message: 'Choose what you want to do:',
+      loop: false,
+      pageSize: 20,
       choices: [
         {
           name: 'Copy the secret of a credential to clipboard',
@@ -73,6 +76,7 @@ const main = async (): Promise<void> => {
           name: 'Generate a strong password',
           value: MainMenuOptions.GENERATE_PASSWORD,
         },
+        new inquirer.Separator(),
         {
           name: '[!!] Show the plain secret for a single credential',
           value: MainMenuOptions.SHOW_CREDENTIAL,
@@ -81,6 +85,7 @@ const main = async (): Promise<void> => {
           name: '[!!] Show the last generated password',
           value: MainMenuOptions.SHOW_LAST_GENERATED_PASSWORD,
         },
+        new inquirer.Separator(),
         {
           name: 'Change vault master password',
           value: MainMenuOptions.UPDATE_VAULT_PASSWORD,
@@ -91,43 +96,10 @@ const main = async (): Promise<void> => {
         },
       ],
     })
-
-    if (mainMenu.option === MainMenuOptions.LIST_CREDENTIALS) {
-      await listCredentials()
-    }
-
-    if (mainMenu.option === MainMenuOptions.STORE_CREDENTIAL) {
-      await storeCredential()
-    }
-
-    if (mainMenu.option === MainMenuOptions.COPY_SECRET_CLIPBOARD) {
-      await copySecretClipboard()
-    }
-
-    if (mainMenu.option === MainMenuOptions.SHOW_CREDENTIAL) {
-      await showCredential()
-    }
-
-    if (mainMenu.option === MainMenuOptions.REMOVE_CREDENTIAL) {
-      await removeCredential()
-    }
-
-    if (mainMenu.option === MainMenuOptions.GENERATE_PASSWORD) {
-      await generateStrongPassword()
-    }
-
-    if (mainMenu.option === MainMenuOptions.SHOW_LAST_GENERATED_PASSWORD) {
-      await showLastGeneratedPassword()
-    }
-
-    if (mainMenu.option === MainMenuOptions.UPDATE_VAULT_PASSWORD) {
-      await changeVaultMasterPassword()
-    }
-
-    if (mainMenu.option === MainMenuOptions.EXIT) {
-      console.log('Bye!!!')
-      process.exit(0)
-    }
+    /**
+     * Invoke the appropriate menu handler
+     */
+    await menuHandler[menuSelection.option as MainMenuOptions]()
   }
 }
 
@@ -178,275 +150,285 @@ const unlockVault = async () => {
   if (!vault.unlockVault(inputPassword.password)) console.log('Wrong password! Try again...')
 }
 
-const listCredentials = async (): Promise<void> => {
-  console.clear()
-  const credentials = vault.getCredentials()
-  if (!credentials.length) {
-    logNoCredentialsMessage()
-    return
-  }
-  console.table(credentials.map((credential) => ({ ...credential, secret: '******' })))
-}
-
-const storeCredential = async (): Promise<void> => {
-  console.clear()
-  const credentials = vault.getCredentials()
-  const credentialData = await inquirer.prompt([
-    {
-      type: 'input',
-      name: 'identifier',
-      message: 'Provide an identifier for this credential (eg: amazon):',
-      validate(input: string): boolean | string {
-        if (input.length < 2) return 'You must provide an identifier for this credential'
-        if (credentials.some((credential) => credential.key === input))
-          return 'A credential with this same identifier already exists! Choose other...'
-        return true
-      },
-    },
-    {
-      type: 'input',
-      name: 'key',
-      message: 'Provide a key for your credential (usually a login):',
-    },
-    {
-      type: 'password',
-      mask: '*',
-      name: 'secret',
-      message: 'Provide a secret value for this credential:',
-      validate(input: string): boolean | string | Promise<boolean | string> {
-        if (input.length === 0) return 'You must provide a secret value'
-        return true
-      },
-    },
-    {
-      type: 'password',
-      mask: '*',
-      name: 'confirmation',
-      message: 'Provide the same secret again:',
-      validate(input: string, answers: Record<string, string>): boolean | string {
-        if (input !== answers.secret) return 'The password doest not match the provided password'
-        return true
-      },
-    },
-    {
-      type: 'input',
-      name: 'website',
-      message: 'Provide a website for this credential (optional):',
-    },
-  ])
-  vault.addCredential({
-    identifier: credentialData.identifier,
-    key: credentialData.key,
-    secret: credentialData.secret,
-    website: credentialData.website,
-  })
-  console.log('Done! Your new credential was stored successfully!')
-  await showBackToMainMenuOption()
-  console.clear()
-}
-
-const copySecretClipboard = async (): Promise<void> => {
-  console.clear()
-  const credentials = vault.getCredentials()
-  if (credentials.length === 0) {
-    logNoCredentialsMessage()
-  }
-  const credentialData = await inquirer.prompt({
-    type: credentials.length > 5 ? 'rawlist' : 'list',
-    name: 'index',
-    message: 'Select a credential to copy the secret to the clipboard:',
-    choices: [
-      ...credentials.map((credential, index) => ({
-        name: `Identifier: ${credential.identifier} | Key: ${credential.key} | Website: ${credential.website}`,
-        value: index,
-      })),
+/**
+ * Create a object containing all of the menu handlers
+ */
+const menuHandler: MenuOptionsHandler = {
+  [MainMenuOptions.EXIT]: async (): Promise<void> => {
+    console.log('Bye!!!')
+    process.exit(0)
+  },
+  [MainMenuOptions.LIST_CREDENTIALS]: async (): Promise<void> => {
+    console.clear()
+    const credentials = vault.getCredentials()
+    if (!credentials.length) {
+      logNoCredentialsMessage()
+      return
+    }
+    console.table(credentials.map((credential) => ({ ...credential, secret: '******' })))
+  },
+  [MainMenuOptions.STORE_CREDENTIAL]: async (): Promise<void> => {
+    console.clear()
+    const credentials = vault.getCredentials()
+    const credentialData = await inquirer.prompt([
       {
-        name: 'Abort...',
-        value: -1,
+        type: 'input',
+        name: 'identifier',
+        message: 'Provide an identifier for this credential (eg: amazon):',
+        validate(input: string): boolean | string {
+          if (input.length < 2) return 'You must provide an identifier for this credential'
+          if (credentials.some((credential) => credential.key === input))
+            return 'A credential with this same identifier already exists! Choose other...'
+          return true
+        },
       },
-    ],
-  })
-  const index = parseInt(credentialData.index, 10)
-  if (index >= 0) {
-    const credential = credentials[index]
-    clipboardy.writeSync(credential.secret)
-    console.log('Credential copied to clipboard!')
-    await showBackToMainMenuOption()
-  }
-  console.clear()
-}
-
-const showCredential = async (): Promise<void> => {
-  console.clear()
-  const credentials = vault.getCredentials()
-  if (credentials.length === 0) {
-    logNoCredentialsMessage()
-  }
-  const credentialData = await inquirer.prompt({
-    type: credentials.length > 5 ? 'rawlist' : 'list',
-    name: 'index',
-    message: 'Select a credential to show the secret:',
-    choices: [
-      ...credentials.map((credential, index) => ({
-        name: `Identifier: ${credential.identifier} - Key: ${credential.key} - Website: ${credential.website}`,
-        value: index,
-      })),
       {
-        name: 'Abort...',
-        value: -1,
+        type: 'input',
+        name: 'key',
+        message: 'Provide a key for your credential (usually a login):',
       },
-    ],
-  })
-  const index = parseInt(credentialData.index, 10)
-  if (index >= 0) {
-    const credential = credentials[index]
-    console.table(credential)
-    await showBackToMainMenuOption()
-  }
-  console.clear()
-}
-
-const removeCredential = async (): Promise<void> => {
-  console.clear()
-  const credentials = vault.getCredentials()
-  if (credentials.length === 0) {
-    logNoCredentialsMessage()
-    return
-  }
-
-  const credentialData = await inquirer.prompt({
-    type: credentials.length > 5 ? 'rawlist' : 'list',
-    name: 'index',
-    message: 'Select the credential you want to remove:',
-    choices: [
-      ...credentials.map((credential, index) => ({
-        name: `Identifier: ${credential.identifier} | Key: ${credential.key} | Website: ${credential.website}`,
-        value: index,
-      })),
       {
-        name: 'Abort...',
-        value: -1,
+        type: 'password',
+        mask: '*',
+        name: 'secret',
+        message: 'Provide a secret value for this credential:',
+        validate(input: string): boolean | string | Promise<boolean | string> {
+          if (input.length === 0) return 'You must provide a secret value'
+          return true
+        },
       },
-    ],
-  })
-
-  const index = parseInt(credentialData.index, 10)
-  if (index >= 0) {
-    const credential = credentials[index]
-    const confirmation = await inquirer.prompt({
-      type: 'confirm',
-      name: 'confirm',
-      default: false,
-      message: `Are you sure you want to remove the credential "${credential.identifier}"? This cannot be undone!`,
+      {
+        type: 'password',
+        mask: '*',
+        name: 'confirmation',
+        message: 'Provide the same secret again:',
+        validate(input: string, answers: Record<string, string>): boolean | string {
+          if (input !== answers.secret) return 'The password doest not match the provided password'
+          return true
+        },
+      },
+      {
+        type: 'input',
+        name: 'website',
+        message: 'Provide a website for this credential (optional):',
+      },
+    ])
+    vault.addCredential({
+      identifier: credentialData.identifier,
+      key: credentialData.key,
+      secret: credentialData.secret,
+      website: credentialData.website,
     })
-    if (confirmation.confirm) {
-      vault.removeCredential(credential)
-      console.log('Credential removed successfully!')
+    console.log('Done! Your new credential was stored successfully!')
+    await showBackToMainMenuOption()
+    console.clear()
+  },
+  [MainMenuOptions.COPY_SECRET_CLIPBOARD]: async (): Promise<void> => {
+    console.clear()
+    const credentials = vault.getCredentials()
+    if (credentials.length === 0) {
+      logNoCredentialsMessage()
+    }
+    const credentialData = await inquirer.prompt({
+      type: credentials.length > 5 ? 'rawlist' : 'list',
+      name: 'index',
+      message: 'Select a credential to copy the secret to the clipboard:',
+      choices: [
+        ...credentials.map((credential, index) => ({
+          name: `Identifier: ${credential.identifier} | Key: ${credential.key} | Website: ${credential.website}`,
+          value: index,
+        })),
+        {
+          name: 'Abort...',
+          value: -1,
+        },
+      ],
+    })
+    const index = parseInt(credentialData.index, 10)
+    if (index >= 0) {
+      const credential = credentials[index]
+      clipboardy.writeSync(credential.secret)
+      console.log('Credential copied to clipboard!')
       await showBackToMainMenuOption()
     }
-  }
-  console.clear()
-}
+    console.clear()
+  },
+  [MainMenuOptions.SHOW_CREDENTIAL]: async (): Promise<void> => {
+    console.clear()
+    const credentials = vault.getCredentials()
+    if (credentials.length === 0) {
+      logNoCredentialsMessage()
+    }
+    const credentialData = await inquirer.prompt({
+      type: credentials.length > 5 ? 'rawlist' : 'list',
+      name: 'index',
+      message: 'Select a credential to show the secret:',
+      choices: [
+        ...credentials.map((credential, index) => ({
+          name: `Identifier: ${credential.identifier} - Key: ${credential.key} - Website: ${credential.website}`,
+          value: index,
+        })),
+        {
+          name: 'Abort...',
+          value: -1,
+        },
+      ],
+    })
+    const index = parseInt(credentialData.index, 10)
+    if (index >= 0) {
+      const credential = credentials[index]
+      console.table(credential)
+      await showBackToMainMenuOption()
+    }
+    console.clear()
+  },
+  [MainMenuOptions.REMOVE_CREDENTIAL]: async (): Promise<void> => {
+    console.clear()
+    const credentials = vault.getCredentials()
+    if (credentials.length === 0) {
+      logNoCredentialsMessage()
+      return
+    }
 
-const generateStrongPassword = async (): Promise<void> => {
-  const credentialData = await inquirer.prompt([
-    {
-      type: 'number',
-      name: 'size',
-      default: 18,
-      message: 'What is the desired size?',
-    },
-    {
+    const credentialData = await inquirer.prompt({
+      type: credentials.length > 5 ? 'rawlist' : 'list',
+      name: 'index',
+      message: 'Select the credential you want to remove:',
+      choices: [
+        ...credentials.map((credential, index) => ({
+          name: `Identifier: ${credential.identifier} | Key: ${credential.key} | Website: ${credential.website}`,
+          value: index,
+        })),
+        {
+          name: 'Abort...',
+          value: -1,
+        },
+      ],
+    })
+
+    const index = parseInt(credentialData.index, 10)
+    if (index >= 0) {
+      const credential = credentials[index]
+      const confirmation = await inquirer.prompt({
+        type: 'confirm',
+        name: 'confirm',
+        default: false,
+        message: `Are you sure you want to remove the credential "${credential.identifier}"? This cannot be undone!`,
+      })
+      if (confirmation.confirm) {
+        vault.removeCredential(credential)
+        console.log('Credential removed successfully!')
+        await showBackToMainMenuOption()
+      }
+    }
+    console.clear()
+  },
+  [MainMenuOptions.GENERATE_PASSWORD]: async (): Promise<void> => {
+    const credentialData = await inquirer.prompt([
+      {
+        type: 'number',
+        name: 'size',
+        default: 18,
+        message: 'What is the desired size?',
+      },
+      {
+        type: 'confirm',
+        name: 'specialChars',
+        default: true,
+        message: 'Should we add some special chars?',
+      },
+      {
+        type: 'input',
+        name: 'exclude',
+        default: '',
+        message: 'Type any characters you want to exclude',
+      },
+    ])
+
+    lastGeneratedPassword = vault.generateStrongPassword({
+      size: credentialData.size,
+      specialChars: credentialData.specialChars,
+      exclude: credentialData.exclude,
+    })
+    clipboardy.writeSync(lastGeneratedPassword)
+    const confirmDisplay = await inquirer.prompt({
       type: 'confirm',
-      name: 'specialChars',
-      default: true,
-      message: 'Should we add some special chars?',
-    },
-    {
-      type: 'input',
-      name: 'exclude',
-      default: '',
-      message: 'Type any characters you want to exclude',
-    },
-  ])
-
-  lastGeneratedPassword = vault.generateStrongPassword({
-    size: credentialData.size,
-    specialChars: credentialData.specialChars,
-    exclude: credentialData.exclude,
-  })
-  clipboardy.writeSync(lastGeneratedPassword)
-  const confirmDisplay = await inquirer.prompt({
-    type: 'confirm',
-    default: false,
-    name: 'display',
-    message: 'Password generated and copied to clipboard! Should we display it?',
-  })
-  if (confirmDisplay.display) {
-    console.log('------ generated password ------ ')
-    console.log(lastGeneratedPassword)
-    console.log('------ generated password ------ ')
+      default: false,
+      name: 'display',
+      message: 'Password generated and copied to clipboard! Should we display it?',
+    })
+    if (confirmDisplay.display) {
+      console.log('------ generated password ------ ')
+      console.log(lastGeneratedPassword)
+      console.log('------ generated password ------ ')
+      await showBackToMainMenuOption()
+    }
+    console.clear()
+  },
+  [MainMenuOptions.SHOW_LAST_GENERATED_PASSWORD]: async (): Promise<void> => {
+    if (!lastGeneratedPassword) {
+      console.log('There were no passwords generated for this session!')
+    } else {
+      console.log('------ generated password ------ ')
+      console.log(lastGeneratedPassword)
+      console.log('------ generated password ------ ')
+    }
     await showBackToMainMenuOption()
-  }
-  console.clear()
-}
+    console.clear()
+  },
+  [MainMenuOptions.UPDATE_VAULT_PASSWORD]: async (): Promise<void> => {
+    console.clear()
+    const data = await inquirer.prompt([
+      {
+        type: 'password',
+        name: 'currentPassword',
+        message: 'Provide your CURRENT vault password (leave empty to abort):',
+        validate(input: string): string | boolean {
+          if (input.length > 0 && !vault.checkCurrentPassword(input)) {
+            return 'Invalid current password'
+          }
+          return true
+        },
+      },
+      {
+        type: 'password',
+        name: 'newPassword',
+        message: 'Provide a NEW vault password (leave empty to abort):',
+        when: (answers: Record<string, string>): boolean => !!answers.currentPassword,
+        validate(input: string): boolean | string {
+          if (input.length > 0 && !vault.validateStrongPassword(input)) {
+            return 'The new password is not valid. It must have at least 12 characters and contain upper and lower case letters, numbers and special chars.'
+          }
+          if (vault.checkCurrentPassword(input)) {
+            return 'The new password cannot be the same as the current password.'
+          }
+          return true
+        },
+      },
+      {
+        type: 'password',
+        name: 'confirmation',
+        when: (answers: Record<string, string>): boolean => !!answers.newPassword,
+        message: 'Confirm the NEW vault password (leave empty to abort):',
+        validate(input: string, answers?: Record<string, string>): boolean | string {
+          if (input.length > 0 && input !== answers?.newPassword) {
+            return 'The confirmation does not match the provided password.'
+          }
+          return true
+        },
+      },
+    ])
+    if (!data.currentPassword || !data.newPassword || !data.confirmation) {
+      console.log('Aborted!')
+    } else {
+      console.log('Updating vault password...')
+      vault.changePassword(data.newPassword)
+      console.log('Vault password successfully updated!')
+    }
 
-const showLastGeneratedPassword = async (): Promise<void> => {
-  if (!lastGeneratedPassword) {
-    console.log('There were no passwords generated for this session!')
-  } else {
-    console.log('------ generated password ------ ')
-    console.log(lastGeneratedPassword)
-    console.log('------ generated password ------ ')
-  }
-  await showBackToMainMenuOption()
-  console.clear()
-}
-
-const changeVaultMasterPassword = async (): Promise<void> => {
-  console.clear()
-  const data = await inquirer.prompt([
-    {
-      type: 'password',
-      name: 'currentPassword',
-      message: 'Provide your CURRENT vault password:',
-      validate(input: string): string | boolean {
-        if (!vault.checkCurrentPassword(input)) {
-          return 'Invalid current password'
-        }
-        return true
-      },
-    },
-    {
-      type: 'password',
-      name: 'newPassword',
-      message: 'Provide a NEW vault password:',
-      validate(input: string): boolean | string {
-        if (!vault.validateStrongPassword(input)) {
-          return 'The new password is not valid. It must have at least 12 characters and contain upper and lower case letters, numbers and special chars.'
-        }
-        if (vault.checkCurrentPassword(input)) {
-          return 'The new password cannot be the same as the current password.'
-        }
-        return true
-      },
-    },
-    {
-      type: 'password',
-      name: 'confirmation',
-      message: 'Confirm the NEW vault password:',
-      validate(input: string, answers?: Record<string, string>): boolean | string {
-        if (input !== answers?.newPassword) {
-          return 'The confirmation does not match the provided password.'
-        }
-        return true
-      },
-    },
-  ])
-  console.log('Updating vault password...')
-  vault.changePassword(data.newPassword)
-  console.log('Vault password successfully updated!')
-  await showBackToMainMenuOption()
+    await showBackToMainMenuOption()
+    console.clear()
+  },
 }
 
 const logNoCredentialsMessage = (): void => {

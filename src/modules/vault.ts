@@ -122,6 +122,7 @@ export const updateVault = (): void => {
   vaultWrapper.encryptedData = encryptedData
   vaultWrapper.authTag = cipher.getAuthTag().toString('base64')
   vaultWrapper.iv = iv.toString('base64')
+  vaultWrapper.salt = vaultPassword.salt.toString('base64')
   fs.writeFileSync(VAULT_FILE_PATH, JSON.stringify(vaultWrapper), { encoding: 'utf-8' })
 }
 

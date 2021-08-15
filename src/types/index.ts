@@ -1,3 +1,5 @@
+import { MainMenuOptions } from '../enums'
+
 export type Vault = {
   totalItems: number
   credentials: Credential[]
@@ -27,3 +29,5 @@ export type VaultPassword = {
   hash: Buffer
   salt: Buffer
 }
+
+export type MenuOptionsHandler = Record<MainMenuOptions, () => Promise<void>>
